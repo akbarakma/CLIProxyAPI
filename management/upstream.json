@@ -1,0 +1,7 @@
+{
+  "repository": "router-for-me/Cli-Proxy-API-Management-Center",
+  "version": "v1.27.2",
+  "commit": "f154fa9380825c4fe94bc577a9abaa7e505f8875",
+  "archive_sha256": "85a49d849a5deacd59d3262fdbfdf06ce38e460e4c7c173a219fd6caf307f47d",
+  "bun": "1.4.3"
+}

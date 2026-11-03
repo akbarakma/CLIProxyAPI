@@ -51,12 +51,17 @@ def verify_keepalive():
         env = ROOT / "keepalive/env" / (name + ".env")
         assert env.is_file() and str(ROOT.parent / "cliproxyapi") + "/" not in env.read_text(), name
         timer = ("keepalive-halfhourly@" if name.startswith("codex-") else "keepalive-hourly@") + name + ".timer"
-        state = subprocess.check_output(["systemctl", "--user", "is-active", timer], text=True, timeout=10).strip()
-        assert state == "active", timer
+        raw = subprocess.check_output(["systemctl", "--user", "show", timer, "-p",
+                                       "LoadState,ActiveState,UnitFileState"], text=True, timeout=10)
+        state = dict(line.split("=", 1) for line in raw.splitlines())
+        assert state["LoadState"] == "loaded", timer
+        assert (state["UnitFileState"], state["ActiveState"]) in {
+            ("enabled", "active"), ("disabled", "inactive")
+        }, timer
         path = subprocess.check_output(["systemctl", "--user", "show", timer, "-p", "FragmentPath", "--value"],
                                        text=True, timeout=10).strip()
         assert Path(path).resolve().is_relative_to(source), timer
-    print("PASS: all keepalive timers, enabled links, and environment paths use the fork", flush=True)
+    print("PASS: keepalive schedules are consistently enabled or paused and use the fork", flush=True)
 
 
 def verify(base, config_path, key, external=False, live=False, save=False):
@@ -104,9 +109,18 @@ def verify(base, config_path, key, external=False, live=False, save=False):
         verify_keepalive()
         for path in ["/v0/management/auth-files", "/v8/management/credentials", "/management.html"]:
             request("https://llm.example.com", path, expected=404)
+        request("https://llm.example.com", "/v8/management/keepalive", expected=404)
         request("https://llm.example.com", "/v1/models", client)
         for path in ["/v0/management/auth-files", "/v8/management/credentials", "/management.html"]:
             request(TAILNET, path, key)
+        manifest = json.loads((ROOT / ".local/management-panel/build.json").read_text())
+        custom_panel = request(TAILNET, "/management.html")
+        assert hashlib.sha256(custom_panel).hexdigest() == manifest["panel_sha256"]
+        request(TAILNET, "/v8/management/keepalive", expected=401)
+        status = json.loads(request(TAILNET, "/v8/management/keepalive", key))
+        assert len(status["accounts"]) == 5
+        assert all(account["available"] for account in status["accounts"])
+        print("PASS: custom panel checksum, private keepalive authentication, and live timer data", flush=True)
         usage = json.loads(request("https://proxy-host.example.ts.net:8443", "/v1/usage"))
         assert len(usage["accounts"]) == 5
         print("PASS: public API, public management blocks, private panel, T3 hub, and usage service", flush=True)

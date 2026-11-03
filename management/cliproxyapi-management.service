@@ -1,0 +1,16 @@
+[Unit]
+Description=CLIProxyAPI management panel and keepalive controls
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/Documents/CLIProxyAPI/management/server.py --port 8319
+Environment=PYTHONDONTWRITEBYTECODE=1
+WorkingDirectory=%h/Documents/CLIProxyAPI
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+UMask=0077
+
+[Install]
+WantedBy=default.target
