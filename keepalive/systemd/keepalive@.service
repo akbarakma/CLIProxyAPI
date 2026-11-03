@@ -1,0 +1,9 @@
+[Unit]
+Description=Subscription keepalive ping (%i)
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/Documents/CLIProxyAPI/keepalive/env/%i.env
+ExecStart=/bin/bash ${KEEPALIVE_SCRIPT}
+TimeoutStartSec=120

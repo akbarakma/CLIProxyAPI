@@ -1,0 +1,30 @@
+services:
+  cli-proxy-api:
+    image: ${CLI_PROXY_IMAGE:-cliproxyapi-akbar:v8.0.53-panel-v1.27.2}
+    container_name: cli-proxy-api
+    user: "1000:1000"
+    environment:
+      TZ: Asia/Jakarta
+    ports:
+      - "127.0.0.1:8317:8317"
+    volumes:
+      - ./config.yaml:/CLIProxyAPI/config.yaml
+      - ./auths:/data/auths
+      - ./logs:/CLIProxyAPI/logs
+    restart: unless-stopped
+
+  usage:
+    image: python:3.13-alpine
+    container_name: cliproxyapi-usage
+    user: "1000:1000"
+    command: ["python", "-u", "/app/server.py"]
+    environment:
+      TZ: Asia/Jakarta
+      USAGE_ALLOWED_LOGIN: main@example.com
+      USAGE_AUTH_DIR: /auths
+    ports:
+      - "127.0.0.1:8318:8318"
+    volumes:
+      - ./usage:/app:ro
+      - ./auths/active:/auths:ro
+    restart: unless-stopped

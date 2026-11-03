@@ -1,0 +1,10 @@
+[Unit]
+Description=Hourly keepalive at :00 (%i)
+
+[Timer]
+OnCalendar=*-*-* *:00:00
+AccuracySec=1s
+Unit=keepalive@%i.service
+
+[Install]
+WantedBy=timers.target

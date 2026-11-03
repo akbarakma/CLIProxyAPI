@@ -39,3 +39,10 @@ bin
 .bmad
 _bmad
 _bmad-output
+
+keepalive
+usage
+scripts
+.local
+static
+OPERATIONS.md

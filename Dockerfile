@@ -26,6 +26,10 @@ COPY --from=builder ./app/CLIProxyAPI /CLIProxyAPI/CLIProxyAPI
 
 COPY config.example.yaml /CLIProxyAPI/config.example.yaml
 
+ADD --checksum=sha256:2f6cf57a8ca4ace1fadde0280cbd41084f56999738d0e692a30b135420f7fc30 https://github.com/router-for-me/Cli-Proxy-API-Management-Center/releases/download/v1.27.2/management.html /CLIProxyAPI/static/management.html
+
+RUN chmod 755 /CLIProxyAPI/static && chmod 644 /CLIProxyAPI/static/management.html
+
 WORKDIR /CLIProxyAPI
 
 EXPOSE 8317
