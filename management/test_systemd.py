@@ -51,6 +51,9 @@ class TimerControlTests(unittest.TestCase):
                     print("Cleaning test unit", path.name, flush=True)
                     print(controller.command("show", path.name, "-p", "Id,FragmentPath").strip(), flush=True)
                     controller.command("stop", path.name)
+                    state = controller.command("show", path.name, "-p", "ActiveState", "--value").strip()
+                    if state == "failed":
+                        controller.command("reset-failed", path.name)
                 controller.command("disable", timer.name)
                 for path, source in links:
                     if path.is_symlink():
@@ -58,6 +61,9 @@ class TimerControlTests(unittest.TestCase):
                         self.assertEqual(path.resolve(), source)
                         path.unlink()
                 controller.command("daemon-reload")
+                remaining = controller.command("list-units", "--all", "--plain", "--no-legend",
+                                               timer.name, service.name)
+                self.assertEqual(remaining.strip(), "")
 
 
 if __name__ == "__main__":
