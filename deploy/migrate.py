@@ -63,6 +63,19 @@ def rewire(link, target):
     os.replace(temporary, link)
 
 
+def keepalive_links():
+    targets = {"keepalive@.service", "keepalive-hourly@.timer", "keepalive-halfhourly@.timer"}
+    links = {}
+    for path in UNIT_DIR.rglob("*"):
+        if not path.is_symlink():
+            continue
+        target = path.resolve()
+        if target.parent == OLD / "keepalive/systemd" and target.name in targets:
+            assert (ROOT / "keepalive/systemd" / target.name).is_file()
+            links[path] = target
+    return links
+
+
 def refresh_runtime():
     for name in ["auths", "logs", "keepalive/env", "keepalive/logs", "keepalive/state"]:
         source = OLD / name
@@ -110,9 +123,8 @@ def migrate():
     existing = containers()
     expected = {"cli-proxy-api": "cli-proxy-api", "cliproxyapi-usage": "usage"}
     if all(d["Config"]["Labels"].get("com.docker.compose.project.working_dir") == str(ROOT) for d in existing):
-        for path in (ROOT / "keepalive/systemd").iterdir():
-            if path.suffix in [".service", ".timer"]:
-                rewire(UNIT_DIR / path.name, path)
+        for link, target in keepalive_links().items():
+            rewire(link, ROOT / "keepalive/systemd" / target.name)
         run("systemctl", "--user", "daemon-reload", timeout=20)
         publish_management()
         verify("http://127.0.0.1:8317", ROOT / "config.yaml", management_key(), external=True)
@@ -131,13 +143,7 @@ def migrate():
                  "--no-legend", "--no-pager", "keepalive@*.service", timeout=15)
     assert not active.strip(), "A keepalive service is active; retry outside its scheduled window"
     assert 120 <= time.time() % 1800 <= 1650, "Retry away from the keepalive schedule"
-    old_links = {}
-    for path in (ROOT / "keepalive/systemd").iterdir():
-        if path.suffix not in [".service", ".timer"]:
-            continue
-        link = UNIT_DIR / path.name
-        assert link.is_symlink() and link.resolve() == OLD / "keepalive/systemd" / path.name, str(link)
-        old_links[str(link)] = str(link.resolve())
+    old_links = keepalive_links()
     record("prepared", old_images={d["Name"]: d["Image"] for d in existing})
     stopped = False
     links_changed = False
@@ -149,8 +155,8 @@ def migrate():
         compose(ROOT, "compose.host.yml")
         wait_healthy()
         links_changed = True
-        for link in old_links:
-            rewire(Path(link), ROOT / "keepalive/systemd" / Path(link).name)
+        for link, target in old_links.items():
+            rewire(link, ROOT / "keepalive/systemd" / target.name)
         run("systemctl", "--user", "daemon-reload", timeout=20)
         publish_management()
         verify("http://127.0.0.1:8317", ROOT / "config.yaml", management_key(), external=True, live=True, save=True)

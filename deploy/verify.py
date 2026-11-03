@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -38,6 +39,24 @@ def request(base, path, key=None, method="GET", payload=None, headers=None, expe
     if status != expected:
         raise RuntimeError(f"{method} {path} returned {status}, expected {expected}")
     return body
+
+
+def verify_keepalive():
+    units = Path.home() / ".config/systemd/user"
+    source = ROOT / "keepalive/systemd"
+    for path in units.rglob("*"):
+        if path.name.startswith("keepalive") and path.is_symlink():
+            assert path.resolve().is_relative_to(source), str(path)
+    for name in ["claude-main", "claude-alt", "claude-fallback", "codex-main", "codex-alt"]:
+        env = ROOT / "keepalive/env" / (name + ".env")
+        assert env.is_file() and str(ROOT.parent / "cliproxyapi") + "/" not in env.read_text(), name
+        timer = ("keepalive-halfhourly@" if name.startswith("codex-") else "keepalive-hourly@") + name + ".timer"
+        state = subprocess.check_output(["systemctl", "--user", "is-active", timer], text=True, timeout=10).strip()
+        assert state == "active", timer
+        path = subprocess.check_output(["systemctl", "--user", "show", timer, "-p", "FragmentPath", "--value"],
+                                       text=True, timeout=10).strip()
+        assert Path(path).resolve().is_relative_to(source), timer
+    print("PASS: all keepalive timers, enabled links, and environment paths use the fork", flush=True)
 
 
 def verify(base, config_path, key, external=False, live=False, save=False):
@@ -82,6 +101,7 @@ def verify(base, config_path, key, external=False, live=False, save=False):
         assert codex.get("status") == "completed"
         print("PASS: live Claude and Codex responses", flush=True)
     if external:
+        verify_keepalive()
         for path in ["/v0/management/auth-files", "/v8/management/credentials", "/management.html"]:
             request("https://llm.example.com", path, expected=404)
         request("https://llm.example.com", "/v1/models", client)

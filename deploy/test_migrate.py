@@ -9,6 +9,31 @@ import migrate
 
 
 class RollbackTests(unittest.TestCase):
+    def test_timer_instances_and_enabled_links_move_to_the_new_checkout(self):
+        with tempfile.TemporaryDirectory(prefix="cliproxyapi-unit-test-") as directory:
+            root = Path(directory) / "CLIProxyAPI"
+            old = Path(directory) / "cliproxyapi"
+            units = Path(directory) / "units"
+            wants = units / "timers.target.wants"
+            wants.mkdir(parents=True)
+            name = "keepalive-hourly@.timer"
+            for folder in [old, root]:
+                (folder / "keepalive/systemd").mkdir(parents=True)
+                (folder / "keepalive/systemd" / name).write_text("[Timer]\nOnCalendar=hourly\n")
+            instance = units / "keepalive-hourly@claude-alt.timer"
+            instance.symlink_to(old / "keepalive/systemd" / name)
+            enabled = wants / instance.name
+            enabled.symlink_to(instance)
+            with patch.object(migrate, "ROOT", root), patch.object(migrate, "OLD", old), \
+                    patch.object(migrate, "UNIT_DIR", units):
+                links = migrate.keepalive_links()
+                self.assertEqual(set(links), {instance, enabled})
+                for link, target in links.items():
+                    migrate.rewire(link, root / "keepalive/systemd" / target.name)
+                self.assertEqual(migrate.keepalive_links(), {})
+            for link in [instance, enabled]:
+                self.assertEqual(link.resolve(), root / "keepalive/systemd" / name)
+
     def test_rollback_preserves_the_latest_refresh_token(self):
         with tempfile.TemporaryDirectory(prefix="cliproxyapi-rollback-test-") as directory:
             root = Path(directory) / "CLIProxyAPI"
