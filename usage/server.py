@@ -15,13 +15,8 @@ FRESH_FOR = 60
 FORCE_FLOOR = 10
 CODEX_UA = "codex_cli_rs/0.166.0"
 
-ACCOUNTS = [
-    {"id": "claude-main", "provider": "claude", "name": "Claude (Main)", "file": "claude-akbar.json", "plan": "pro"},
-    {"id": "claude-alt", "provider": "claude", "name": "Claude (Alt)", "file": "claude-akbar-alt.json", "plan": "pro"},
-    {"id": "claude-fallback", "provider": "claude", "name": "Claude (Fallback)", "file": "claude-fallback.json", "plan": "max", "manual": True},
-    {"id": "codex-main", "provider": "codex", "name": "Codex (Main)", "file": "codex-00000000-main@example.com-plus.json"},
-    {"id": "codex-alt", "provider": "codex", "name": "Codex (Alt)", "file": "codex-00000000-alt@example.com-plus.json"},
-]
+with open(os.environ.get("USAGE_ACCOUNTS", "/config/accounts.json")) as accounts_file:
+    ACCOUNTS = [{**account, "name": account["label"]} for account in json.load(accounts_file)]
 BY_ID = {account["id"]: account for account in ACCOUNTS}
 CLAUDE_WINDOWS = [
     ("five_hour", "Session", 18000000), ("seven_day", "Weekly", 604800000),
@@ -59,7 +54,7 @@ def load_login(account):
         login = json.load(f)
     expired = login.get("expired")
     if expired and ms(expired) <= time.time() * 1000:
-        raise UsageError("The proxy has not renewed this login. Check the cli-proxy-api container on the proxy host.", 300)
+        raise UsageError("The proxy has not renewed this login. Check the cli-proxy-api container.", 300)
     return login
 
 

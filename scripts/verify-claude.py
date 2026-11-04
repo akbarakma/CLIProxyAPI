@@ -1,7 +1,7 @@
 import argparse
 import json
 
-from cpa import ACTIVE, FALLBACK, POOL, config, request
+from cpa import ACTIVE, CLAUDE, CODEX, config, request
 
 
 def main():
@@ -20,25 +20,27 @@ def main():
     print("PASS: fill-first routing without session affinity, management panel enabled")
 
     files = sorted(path.name for path in ACTIVE.glob("*.json"))
-    claude = {name: json.loads((ACTIVE / name).read_text()) for name in files if name.startswith("claude-")}
-    codex = [name for name in files if name.startswith("codex-")]
-    for name in codex:
-        assert json.loads((ACTIVE / name).read_text()).get("websockets") is True, name
-    assert set(files) == set(claude) | set(codex), "unexpected files in auths/active: " + ", ".join(sorted(set(files) - set(claude) - set(codex)))
-    assert set(claude) <= set(POOL), "unexpected Claude files: " + ", ".join(sorted(set(claude) - set(POOL)))
+    assert set(files) == set(CLAUDE) | set(CODEX), "auths/active differs from accounts.json: " + ", ".join(sorted(set(files) ^ (set(CLAUDE) | set(CODEX))))
+    claude = {name: json.loads((ACTIVE / name).read_text()) for name in CLAUDE}
+    for name, account in CODEX.items():
+        record = json.loads((ACTIVE / name).read_text())
+        assert record["type"] == "codex", name
+        assert record.get("websockets") is True, name
+        assert record.get("priority") == account["priority"], name + " priority is " + repr(record.get("priority"))
     for name, record in claude.items():
-        label, priority = POOL[name]
+        account = CLAUDE[name]
         assert record["type"] == "claude", name
-        assert record.get("label") == label, name + " label is " + repr(record.get("label"))
-        assert record.get("priority") == priority, name + " priority is " + repr(record.get("priority"))
+        assert record.get("label") == account["label"], name + " label is " + repr(record.get("label"))
+        assert record.get("priority") == account["priority"], name + " priority is " + repr(record.get("priority"))
         assert record.get("disabled") is False, name + " is disabled"
-        if name == FALLBACK:
+        if account.get("setup_token"):
             assert record.get("setup_token") is True, name + " is not a setup-token record"
         else:
             assert record.get("refresh_token"), name + " has no refresh token"
     accounts = [record["account_uuid"] for record in claude.values()]
     assert len(accounts) == len(set(accounts)), "two pool files hold the same Claude account"
-    print("PASS: Claude " + ", ".join(POOL[n][0] for n in sorted(claude, key=lambda n: -POOL[n][1])) + "; Codex " + str(len(codex)) + " logins")
+    order = lambda pool: ", ".join(a["label"] for a in sorted(pool.values(), key=lambda a: -a["priority"]))
+    print("PASS: Claude " + order(CLAUDE) + "; Codex " + order(CODEX))
 
     claude_models = [item["id"] for item in request("GET", "/v1/models", anthropic=True)["data"]]
     assert "claude-opus-5-5" in claude_models, claude_models

@@ -20,11 +20,18 @@ services:
     command: ["python", "-u", "/app/server.py"]
     environment:
       TZ: Asia/Jakarta
-      USAGE_ALLOWED_LOGIN: main@example.com
+      USAGE_ALLOWED_LOGIN: ${USAGE_ALLOWED_LOGIN:?set USAGE_ALLOWED_LOGIN in .env}
       USAGE_AUTH_DIR: /auths
+      USAGE_ACCOUNTS: /config/accounts.json
     ports:
       - "127.0.0.1:8318:8318"
     volumes:
       - ./usage:/app:ro
       - ./auths/active:/auths:ro
+      - type: bind
+        source: ./.local/accounts.json
+        target: /config/accounts.json
+        read_only: true
+        bind:
+          create_host_path: false
     restart: unless-stopped

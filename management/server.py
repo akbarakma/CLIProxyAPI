@@ -26,16 +26,16 @@ class Account:
     service: str
 
 
-ACCOUNTS = tuple(
-    Account(id, label, interval, f"keepalive-{frequency}@{id}.timer", f"keepalive@{id}.service")
-    for id, label, interval, frequency in [
-        ("claude-main", "Claude Main", 3600, "hourly"),
-        ("claude-alt", "Claude Alt", 3600, "hourly"),
-        ("claude-fallback", "Claude Fallback", 3600, "hourly"),
-        ("codex-main", "Codex Main", 1800, "halfhourly"),
-        ("codex-alt", "Codex Alt", 1800, "halfhourly"),
-    ]
-)
+ACCOUNTS_PATH = Path(os.environ.get("FORK_ACCOUNTS", ROOT / ".local/accounts.json"))
+INTERVALS = {"hourly": 3600, "halfhourly": 1800}
+
+
+def load_accounts(path=ACCOUNTS_PATH):
+    return tuple(
+        Account(a["id"], a["label"], INTERVALS[a["keepalive"]],
+                f"keepalive-{a['keepalive']}@{a['id']}.timer", f"keepalive@{a['id']}.service")
+        for a in json.loads(path.read_text())
+    )
 
 
 def timestamp(value):
@@ -45,9 +45,9 @@ def timestamp(value):
 
 
 class Controller:
-    def __init__(self, root=ROOT, accounts=ACCOUNTS):
+    def __init__(self, root=ROOT, accounts=None):
         self.root = root
-        self.accounts = {account.id: account for account in accounts}
+        self.accounts = {account.id: account for account in accounts or load_accounts()}
         self.lock = threading.Lock()
 
     def command(self, *args):

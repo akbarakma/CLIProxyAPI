@@ -12,8 +12,10 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "scripts"))
+from cpa import ACCOUNTS, setting  # noqa: E402
+
 PANEL_SHA256 = "2f6cf57a8ca4ace1fadde0280cbd41084f56999738d0e692a30b135420f7fc30"
-TAILNET = "https://proxy-host.example.ts.net:8444"
 
 
 def management_key():
@@ -47,10 +49,11 @@ def verify_keepalive():
     for path in units.rglob("*"):
         if path.name.startswith("keepalive") and path.is_symlink():
             assert path.resolve().is_relative_to(source), str(path)
-    for name in ["claude-main", "claude-alt", "claude-fallback", "codex-main", "codex-alt"]:
+    for account in ACCOUNTS:
+        name = account["id"]
         env = ROOT / "keepalive/env" / (name + ".env")
         assert env.is_file() and str(ROOT.parent / "cliproxyapi") + "/" not in env.read_text(), name
-        timer = ("keepalive-halfhourly@" if name.startswith("codex-") else "keepalive-hourly@") + name + ".timer"
+        timer = "keepalive-" + account["keepalive"] + "@" + name + ".timer"
         raw = subprocess.check_output(["systemctl", "--user", "show", timer, "-p",
                                        "LoadState,ActiveState,UnitFileState"], text=True, timeout=10)
         state = dict(line.split("=", 1) for line in raw.splitlines())
@@ -106,23 +109,26 @@ def verify(base, config_path, key, external=False, live=False, save=False):
         assert codex.get("status") == "completed"
         print("PASS: live Claude and Codex responses", flush=True)
     if external:
+        public = setting("FORK_PUBLIC_URL")
+        tailnet_host = setting("FORK_TAILNET_HOST")
+        tailnet = "https://" + tailnet_host + ":8444"
         verify_keepalive()
         for path in ["/v0/management/auth-files", "/v8/management/credentials", "/management.html"]:
-            request("https://llm.example.com", path, expected=404)
-        request("https://llm.example.com", "/v8/management/keepalive", expected=404)
-        request("https://llm.example.com", "/v1/models", client)
+            request(public, path, expected=404)
+        request(public, "/v8/management/keepalive", expected=404)
+        request(public, "/v1/models", client)
         for path in ["/v0/management/auth-files", "/v8/management/credentials", "/management.html"]:
-            request(TAILNET, path, key)
+            request(tailnet, path, key)
         manifest = json.loads((ROOT / ".local/management-panel/build.json").read_text())
-        custom_panel = request(TAILNET, "/management.html")
+        custom_panel = request(tailnet, "/management.html")
         assert hashlib.sha256(custom_panel).hexdigest() == manifest["panel_sha256"]
-        request(TAILNET, "/v8/management/keepalive", expected=401)
-        status = json.loads(request(TAILNET, "/v8/management/keepalive", key))
-        assert len(status["accounts"]) == 5
+        request(tailnet, "/v8/management/keepalive", expected=401)
+        status = json.loads(request(tailnet, "/v8/management/keepalive", key))
+        assert len(status["accounts"]) == len(ACCOUNTS)
         assert all(account["available"] for account in status["accounts"])
         print("PASS: custom panel checksum, private keepalive authentication, and live timer data", flush=True)
-        usage = json.loads(request("https://proxy-host.example.ts.net:8443", "/v1/usage"))
-        assert len(usage["accounts"]) == 5
+        usage = json.loads(request("https://" + tailnet_host + ":8443", "/v1/usage"))
+        assert len(usage["accounts"]) == len(ACCOUNTS)
         print("PASS: public API, public management blocks, private panel, T3 hub, and usage service", flush=True)
 
 

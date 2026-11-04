@@ -10,10 +10,10 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from cpa import ACTIVE, ALT, MAIN, POOL, image
+from cpa import ACTIVE, CLAUDE, image
 
 
-TARGETS = {"main": MAIN, "alt": ALT}
+TARGETS = {a["id"].removeprefix("claude-"): name for name, a in CLAUDE.items() if not a.get("setup_token")}
 CALLBACK = "http://localhost:54545/callback"
 
 
@@ -38,12 +38,11 @@ def login():
 
 
 def adopt(record, target):
-    for other in POOL:
+    for other in CLAUDE:
         if other != target and (ACTIVE / other).exists():
             assert record["account_uuid"] != json.loads((ACTIVE / other).read_text())["account_uuid"], \
-                record.get("email", "This account") + " is already " + POOL[other][0]
-    label, priority = POOL[target]
-    record.update(label=label, priority=priority, disabled=False)
+                record.get("email", "This account") + " is already " + CLAUDE[other]["label"]
+    record.update(label=CLAUDE[target]["label"], priority=CLAUDE[target]["priority"], disabled=False)
     # Rewrite in place: the proxy reloads on WRITE but misses renames.
     descriptor = os.open(ACTIVE / target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(descriptor, "w") as handle:
@@ -52,15 +51,15 @@ def adopt(record, target):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Log a Claude account in to the proxy as Main or Alt. Run on the proxy host as the proxy user, not root.")
+    parser = argparse.ArgumentParser(description="Log a Claude account in to the proxy. Run as the user that owns auths/active, not root.")
     parser.add_argument("target", choices=TARGETS)
     target = TARGETS[parser.parse_args().target]
     if os.geteuid() == 0:
-        raise SystemExit("Run without sudo: the proxy runs as the proxy user and must own every auth file.")
+        raise SystemExit("Run without sudo: the proxy runs as your user and must own every auth file.")
 
     process, work, url = login()
     try:
-        print("Open this link in a browser signed in to the account for " + POOL[target][0] + ", and approve:\n")
+        print("Open this link in a browser signed in to the account for " + CLAUDE[target]["label"] + ", and approve:\n")
         print(url + "\n")
         print("The browser then fails to load a localhost:54545/callback page. Copy that URL.")
         callback = getpass.getpass("Paste the callback URL (hidden): ").strip()
@@ -76,7 +75,7 @@ def main():
             subprocess.run(["docker", "rm", "-f", "cpa-claude-login"], capture_output=True)
         subprocess.run(["rm", "-rf", str(work)], check=False)
 
-    print("Saved " + email + " as " + POOL[target][0] + " in " + target)
+    print("Saved " + email + " as " + CLAUDE[target]["label"] + " in " + target)
     time.sleep(3)
     subprocess.run([sys.executable, str(Path(__file__).with_name("verify-claude.py"))], check=True)
 
