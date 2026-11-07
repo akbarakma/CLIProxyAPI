@@ -3,6 +3,12 @@
 This folder adds a Keepalive section between the Dashboard metrics and traffic chart.
 It stays in the CLIProxyAPI fork, without a separate frontend fork.
 
+The Routing page adds provider filters above the existing board. API keys and
+OAuth credentials for the same provider share a filter. Each OpenAI-compatible
+gateway has its own filter, and All providers retains the combined board.
+Switching filters keeps the full unsaved draft. Dragging, keyboard moves,
+priority calculation, shared policy, and the Save review still use that draft.
+
 The section reads the five systemd timers and their result files every 15 seconds.
 Its switches persist through systemd `enable --now` or `disable --now` on a named timer.
 A disabled timer leaves an existing ping running.
@@ -29,8 +35,9 @@ The pinned upstream cooldown test compares an unescaped apostrophe against an
 HTML attribute. The builder corrects that assertion to use React's escaped value.
 No upstream tests are skipped.
 
-English keepalive labels are registered in each existing locale. The rest of the
-panel keeps its upstream translations.
+English keepalive labels are registered in each existing locale. Provider filter
+labels are translated in `routing-strings.json`. The rest of the panel keeps its
+upstream translations.
 
 ## Service installation
 

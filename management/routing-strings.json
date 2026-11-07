@@ -1,0 +1,24 @@
+{
+  "en": {
+    "provider_filter": "Filter by provider",
+    "all_providers": "All providers"
+  },
+  "zh-CN": { "provider_filter": "按提供商筛选", "all_providers": "所有提供商" },
+  "zh-TW": { "provider_filter": "依提供商篩選", "all_providers": "所有提供商" },
+  "ru": {
+    "provider_filter": "Фильтр по провайдеру",
+    "all_providers": "Все провайдеры"
+  },
+  "vi": {
+    "provider_filter": "Lọc theo nhà cung cấp",
+    "all_providers": "Tất cả nhà cung cấp"
+  },
+  "ko": {
+    "provider_filter": "제공업체별 필터",
+    "all_providers": "모든 제공업체"
+  },
+  "tr": {
+    "provider_filter": "Sağlayıcıya göre filtrele",
+    "all_providers": "Tüm sağlayıcılar"
+  }
+}

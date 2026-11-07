@@ -50,9 +50,11 @@ def build():
     if before in text:
         cooldown_test.write_text(text.replace(before, after))
     strings = json.loads((ROOT / "management/strings.json").read_text())
+    routing_strings = json.loads((ROOT / "management/routing-strings.json").read_text())
     for path in (work / "src/i18n/locales").glob("*.json"):
         data = json.loads(path.read_text())
         data["keepalive"] = strings
+        data["routing"].update(routing_strings[path.stem])
         path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
     bun = ["npm", "exec", "--yes", f'--package=bun@{lock["bun"]}', "--", "bun"]
     subprocess.run(bun + ["install", "--frozen-lockfile"], cwd=work, check=True, timeout=300)
