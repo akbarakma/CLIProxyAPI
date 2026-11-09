@@ -22,16 +22,14 @@ def main():
     files = sorted(path.name for path in ACTIVE.glob("*.json"))
     assert set(files) == set(CLAUDE) | set(CODEX), "auths/active differs from accounts.json: " + ", ".join(sorted(set(files) ^ (set(CLAUDE) | set(CODEX))))
     claude = {name: json.loads((ACTIVE / name).read_text()) for name in CLAUDE}
-    for name, account in CODEX.items():
-        record = json.loads((ACTIVE / name).read_text())
+    codex = {name: json.loads((ACTIVE / name).read_text()) for name in CODEX}
+    for name, record in codex.items():
         assert record["type"] == "codex", name
         assert record.get("websockets") is True, name
-        assert record.get("priority") == account["priority"], name + " priority is " + repr(record.get("priority"))
     for name, record in claude.items():
         account = CLAUDE[name]
         assert record["type"] == "claude", name
         assert record.get("label") == account["label"], name + " label is " + repr(record.get("label"))
-        assert record.get("priority") == account["priority"], name + " priority is " + repr(record.get("priority"))
         assert record.get("disabled") is False, name + " is disabled"
         if account.get("setup_token"):
             assert record.get("setup_token") is True, name + " is not a setup-token record"
@@ -39,8 +37,8 @@ def main():
             assert record.get("refresh_token"), name + " has no refresh token"
     accounts = [record["account_uuid"] for record in claude.values()]
     assert len(accounts) == len(set(accounts)), "two pool files hold the same Claude account"
-    order = lambda pool: ", ".join(a["label"] for a in sorted(pool.values(), key=lambda a: -a["priority"]))
-    print("PASS: Claude " + order(CLAUDE) + "; Codex " + order(CODEX))
+    order = lambda pool, records: ", ".join(pool[name]["label"] + " " + str(records[name].get("priority", 0)) for name in sorted(pool, key=lambda name: -records[name].get("priority", 0)))
+    print("PASS: Claude " + order(CLAUDE, claude) + "; Codex " + order(CODEX, codex))
 
     claude_models = [item["id"] for item in request("GET", "/v1/models", anthropic=True)["data"]]
     assert "claude-opus-5-5" in claude_models, claude_models

@@ -42,7 +42,9 @@ def adopt(record, target):
         if other != target and (ACTIVE / other).exists():
             assert record["account_uuid"] != json.loads((ACTIVE / other).read_text())["account_uuid"], \
                 record.get("email", "This account") + " is already " + CLAUDE[other]["label"]
-    record.update(label=CLAUDE[target]["label"], priority=CLAUDE[target]["priority"], disabled=False)
+    if (ACTIVE / target).exists():
+        record["priority"] = json.loads((ACTIVE / target).read_text()).get("priority", 0)
+    record.update(label=CLAUDE[target]["label"], disabled=False)
     # Rewrite in place: the proxy reloads on WRITE but misses renames.
     descriptor = os.open(ACTIVE / target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(descriptor, "w") as handle:
