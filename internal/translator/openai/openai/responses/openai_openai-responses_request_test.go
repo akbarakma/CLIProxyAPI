@@ -162,32 +162,14 @@ func TestConvertOpenAIResponsesRequestToOpenAIChatCompletions_UnwrapsStringified
 			}`, tt.output))
 
 			out, _ := ConvertOpenAIResponsesRequestToOpenAIChatCompletions("k3", raw, false)
-			content := ojson.GetBytesNoCopy(out, "messages.1.content")
-			if !content.IsArray() {
-				t.Fatalf("expected tool content array, got %s; output=%s", content.Raw, out)
+			wantToolText := tt.expectedText
+			if wantToolText == "" {
+				wantToolText = "The image is in the next message."
 			}
-			parts := content.Array()
-			if len(parts) <= tt.imageIndex {
-				t.Fatalf("expected image part at index %d, got %s", tt.imageIndex, content.Raw)
+			if got := ojson.GetBytesNoCopy(out, "messages.1.content").String(); got != wantToolText {
+				t.Fatalf("tool content = %q, want %q; output=%s", got, wantToolText, out)
 			}
-			imagePart := parts[tt.imageIndex]
-			if got := imagePart.Get("type").String(); got != "image_url" {
-				t.Fatalf("image type = %q, want image_url; part=%s", got, imagePart.Raw)
-			}
-			if got := imagePart.Get("image_url.url").String(); got != tt.expectedURL {
-				t.Fatalf("image URL = %q, want %q; part=%s", got, tt.expectedURL, imagePart.Raw)
-			}
-			if got := imagePart.Get("image_url.detail").String(); got != tt.detail {
-				t.Fatalf("image detail = %q, want %q; part=%s", got, tt.detail, imagePart.Raw)
-			}
-			if tt.expectedText != "" {
-				if got := parts[0].Get("type").String(); got != "text" {
-					t.Fatalf("text type = %q, want text; part=%s", got, parts[0].Raw)
-				}
-				if got := parts[0].Get("text").String(); got != tt.expectedText {
-					t.Fatalf("text = %q, want %q; part=%s", got, tt.expectedText, parts[0].Raw)
-				}
-			}
+			assertToolImageMovedToUser(t, out, 2, 1, tt.expectedURL, tt.detail)
 		})
 	}
 }
@@ -201,19 +183,10 @@ func TestConvertOpenAIResponsesRequestToOpenAIChatCompletions_UnwrapsStringified
 	}`)
 
 	out, _ := ConvertOpenAIResponsesRequestToOpenAIChatCompletions("kimi-k3", raw, false)
-	content := ojson.GetBytesNoCopy(out, "messages.1.content")
-	if !content.IsArray() {
-		t.Fatalf("expected custom tool content array, got %s; output=%s", content.Raw, out)
+	if got := ojson.GetBytesNoCopy(out, "messages.1.content").String(); got != "The image is in the next message." {
+		t.Fatalf("custom tool content = %q; output=%s", got, out)
 	}
-	if got := content.Get("0.type").String(); got != "image_url" {
-		t.Fatalf("image type = %q, want image_url; output=%s", got, out)
-	}
-	if got := content.Get("0.image_url.url").String(); got != "data:image/png;base64,AA==" {
-		t.Fatalf("image URL = %q, want data URL; output=%s", got, out)
-	}
-	if got := content.Get("0.image_url.detail").String(); got != "high" {
-		t.Fatalf("image detail = %q, want high; output=%s", got, out)
-	}
+	assertToolImageMovedToUser(t, out, 2, 1, "data:image/png;base64,AA==", "high")
 }
 
 func TestConvertOpenAIResponsesRequestToOpenAIChatCompletions_PreservesCustomToolOutputFallbacks(t *testing.T) {
@@ -264,18 +237,50 @@ func TestConvertOpenAIResponsesRequestToOpenAIChatCompletions_ConvertsStructured
 	}`)
 
 	out, _ := ConvertOpenAIResponsesRequestToOpenAIChatCompletions("k3", raw, false)
-	content := ojson.GetBytesNoCopy(out, "messages.1.content")
-	if !content.IsArray() {
-		t.Fatalf("expected tool content array, got %s; output=%s", content.Raw, out)
+	if got := ojson.GetBytesNoCopy(out, "messages.1.content").String(); got != "Captured screenshot." {
+		t.Fatalf("tool content = %q, want the text part only; output=%s", got, out)
 	}
-	if got := content.Get("1.type").String(); got != "image_url" {
-		t.Fatalf("image type = %q, want image_url; output=%s", got, out)
+	assertToolImageMovedToUser(t, out, 2, 1, "data:image/png;base64,AA==", "high")
+}
+
+func TestConvertOpenAIResponsesRequestToOpenAIChatCompletions_MovesParallelToolImagesAfterAllToolResults(t *testing.T) {
+	raw := []byte(`{
+		"input": [
+			{"type":"function_call","call_id":"call_a","name":"view_image","arguments":"{}"},
+			{"type":"function_call","call_id":"call_b","name":"view_image","arguments":"{}"},
+			{"type":"function_call_output","call_id":"call_a","output":[{"type":"input_image","image_url":"data:image/png;base64,AA=="}]},
+			{"type":"function_call_output","call_id":"call_b","output":[{"type":"input_image","image_url":"data:image/png;base64,BB=="}]},
+			{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Both look fine."}]}
+		]
+	}`)
+
+	out, _ := ConvertOpenAIResponsesRequestToOpenAIChatCompletions("gpt-6.1-sol", raw, false)
+	var roles []string
+	for _, message := range ojson.GetBytesNoCopy(out, "messages").Array() {
+		roles = append(roles, message.Get("role").String())
 	}
-	if got := content.Get("1.image_url.url").String(); got != "data:image/png;base64,AA==" {
-		t.Fatalf("image URL = %q, want data URL; output=%s", got, out)
+	if got := strings.Join(roles, ","); got != "assistant,tool,tool,user,assistant" {
+		t.Fatalf("roles = %s; output=%s", got, out)
 	}
-	if got := content.Get("1.image_url.detail").String(); got != "high" {
-		t.Fatalf("image detail = %q, want high; output=%s", got, out)
+	assertToolImageMovedToUser(t, out, 3, 1, "data:image/png;base64,AA==", "")
+	assertToolImageMovedToUser(t, out, 3, 2, "data:image/png;base64,BB==", "")
+}
+
+func assertToolImageMovedToUser(t *testing.T, out []byte, messageIndex, partIndex int, wantURL, wantDetail string) {
+	t.Helper()
+	message := ojson.GetBytesNoCopy(out, fmt.Sprintf("messages.%d", messageIndex))
+	if got := message.Get("role").String(); got != "user" {
+		t.Fatalf("messages.%d role = %q, want user; output=%s", messageIndex, got, out)
+	}
+	part := message.Get(fmt.Sprintf("content.%d", partIndex))
+	if got := part.Get("type").String(); got != "image_url" {
+		t.Fatalf("part type = %q, want image_url; output=%s", got, out)
+	}
+	if got := part.Get("image_url.url").String(); got != wantURL {
+		t.Fatalf("image URL = %q, want %q; output=%s", got, wantURL, out)
+	}
+	if got := part.Get("image_url.detail").String(); got != wantDetail {
+		t.Fatalf("image detail = %q, want %q; output=%s", got, wantDetail, out)
 	}
 }
 

@@ -477,6 +477,7 @@ func convertOpenAIResponsesRequestToOpenAIChatCompletions(modelName string, inpu
 			extraAmbiguous = append(extraAmbiguous, id)
 		}
 		messages = translatorcommon.AlignOpenAIToolCallMessages(messages, extraAmbiguous...)
+		messages = moveToolOutputImagesToUserMessages(messages)
 		_ = outDoc.SetRawBytes("messages", translatorcommon.JoinRawArray(messages))
 	}
 
@@ -685,6 +686,60 @@ func setCustomToolCallOutputContentDoc(toolMessageDoc *ojson.Doc, output ojson.R
 	}
 
 	_ = toolMessageDoc.Set("content", responsesToolOutputText(output))
+}
+
+// Chat tool messages take text only. Some upstreams (z0ne) count an image left in a
+// tool message as base64 text: one 0.8 MB screenshot became 529,675 prompt tokens
+// instead of 3,013. Images move to a user message after the run of tool results.
+func moveToolOutputImagesToUserMessages(messages [][]byte) [][]byte {
+	out := make([][]byte, 0, len(messages))
+	var images [][]byte
+	flushImages := func() {
+		if len(images) == 0 {
+			return
+		}
+		parts := append([][]byte{[]byte(`{"type":"text","text":"Images returned by the tool calls above."}`)}, images...)
+		userDoc := ojson.NewDocString(`{"role":"user","content":[]}`)
+		translatorcommon.SetRawArrayItemsDoc(userDoc, "content", parts)
+		out = append(out, userDoc.Bytes())
+		images = nil
+	}
+
+	for _, message := range messages {
+		if ojson.GetBytesNoCopy(message, "role").String() != "tool" {
+			flushImages()
+			out = append(out, message)
+			continue
+		}
+		content := ojson.GetBytesNoCopy(message, "content")
+		if !content.IsArray() {
+			out = append(out, message)
+			continue
+		}
+		var texts []string
+		movedImage := false
+		for _, part := range content.Array() {
+			if part.Get("type").String() == "image_url" {
+				images = append(images, []byte(part.Raw))
+				movedImage = true
+				continue
+			}
+			texts = append(texts, part.Get("text").String())
+		}
+		if !movedImage {
+			out = append(out, message)
+			continue
+		}
+		text := strings.Join(texts, "\n")
+		if strings.TrimSpace(text) == "" {
+			text = "The image is in the next message."
+		}
+		toolDoc := ojson.NewDoc(message)
+		_ = toolDoc.Set("content", text)
+		out = append(out, toolDoc.Bytes())
+	}
+	flushImages()
+	return out
 }
 
 func chatToolOutputContentPart(item ojson.Result) []byte {
