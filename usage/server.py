@@ -50,9 +50,10 @@ CLAUDE_WINDOWS = [
 
 
 class UsageError(Exception):
-    def __init__(self, message, retry_after=60):
+    def __init__(self, message, retry_after=60, headers=None):
         super().__init__(message)
         self.retry_after = retry_after
+        self.headers = headers
 
 
 def ms(value):
@@ -89,13 +90,14 @@ def request(url, headers, body=None):
     try:
         response = urllib.request.urlopen(req, timeout=10)
     except urllib.error.HTTPError as error:
+        error.close()
         if error.code == 401:
             raise UsageError("The provider rejected this login. Renew it on the proxy host.", 300)
         if error.code == 403:
             raise UsageError("The provider denied usage access (403).", 300)
         if error.code == 429:
             retry = error.headers.get("retry-after")
-            raise UsageError("The provider rate limit was reached. Try again later.", max(60, int(retry) if retry and retry.isdigit() else 300))
+            raise UsageError("The provider rate limit was reached. Try again later.", max(60, int(retry) if retry and retry.isdigit() else 300), error.headers)
         raise UsageError(f"The usage request failed ({error.code}).")
     except (urllib.error.URLError, TimeoutError):
         raise UsageError("The provider took too long. Try again later.")
@@ -103,29 +105,92 @@ def request(url, headers, body=None):
         return response.headers, json.load(response)
 
 
+def fable_window(account, used, reset):
+    window = {"id": "seven_day_overage_included", "label": "Fable", "usedPercent": clamp(used), "durationMs": 604800000, "resetAt": ms(reset)}
+    expiry = ms(account.get("fable_included_until"))
+    if expiry is not None:
+        if expiry <= time.time() * 1000:
+            return None
+        window["expiresAt"] = expiry
+    return window
+
+
+def claude_reset_grants(raw):
+    inventory = raw.get("cedar_ember")
+    if not isinstance(inventory, dict) or inventory.get("eligible") is not True or not isinstance(inventory.get("grants"), list):
+        return None
+    grants = []
+    for grant in inventory["grants"]:
+        if not isinstance(grant, dict) or not isinstance(grant.get("id"), str):
+            continue
+        remaining = grant.get("resets_left")
+        if isinstance(remaining, bool) or not isinstance(remaining, int) or remaining < 0:
+            continue
+        clears = grant.get("clears") or []
+        if grant.get("gives_back_weekly") or "seven_day_overage_included" in clears and "seven_day" not in clears:
+            label = "Fable reset"
+        elif "five_hour" in clears and "seven_day" in clears:
+            label = "Full reset"
+        elif "seven_day" in clears:
+            label = "Weekly reset"
+        elif "five_hour" in clears:
+            label = "Session reset"
+        else:
+            label = "Limit reset"
+        grants.append({"id": grant["id"], "label": label, "remainingCount": remaining,
+                       "startsAt": ms(grant.get("starts_at")), "expiresAt": ms(grant.get("ends_at")),
+                       "paused": bool(grant.get("paused")), "usableNow": grant.get("usable_now") is True})
+    return {"grants": grants, "fetchedAt": int(time.time() * 1000)}
+
+
 def claude_usage(account, login):
-    _, raw = request("https://api.anthropic.com/api/oauth/usage", {
+    _, raw = request("https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1", {
         "Authorization": "Bearer " + login["access_token"], "anthropic-beta": "oauth-2025-04-20",
-        "User-Agent": "claude-code/2.1.0", "Accept": "application/json"})
+        "User-Agent": "claude-cli/2.1.322 (external, cli)", "x-app": "cli", "Accept": "application/json"})
     windows = [{"id": key, "label": label, "usedPercent": clamp(raw[key]["utilization"]), "durationMs": duration, "resetAt": ms(raw[key].get("resets_at"))}
                for key, label, duration in CLAUDE_WINDOWS if isinstance(raw.get(key), dict) and raw[key].get("utilization") is not None]
-    return {"kind": "quota", "plan": account.get("plan"), "windows": windows}
+    for limit in raw.get("limits") or []:
+        if not isinstance(limit, dict) or limit.get("kind") != "weekly_scoped":
+            continue
+        model = ((limit.get("scope") or {}).get("model") or {}).get("display_name")
+        if isinstance(model, str) and model.casefold() == "fable" and limit.get("percent") is not None:
+            window = fable_window(account, limit["percent"], limit.get("resets_at"))
+            if window:
+                windows.append(window)
+            break
+    reading = {"kind": "quota", "plan": account.get("plan"), "windows": windows}
+    grants = claude_reset_grants(raw)
+    if grants is not None:
+        reading["resetGrants"] = grants
+    return reading
 
 
-# A setup token cannot read /api/oauth/usage, so one 1-token request returns the same numbers as headers.
-# It opens a five-hour window when none is open, so it runs only on an explicit refresh.
+# A Fable probe returns all three quota headers and can open a session, so refresh stays manual.
 def claude_probe(account, login):
-    headers, _ = request("https://api.anthropic.com/v1/messages", {
-        "Authorization": "Bearer " + login["access_token"], "anthropic-version": "2023-06-01", "anthropic-beta": "oauth-2025-04-20",
-        "content-type": "application/json", "User-Agent": "claude-cli/2.1.316 (external, cli)"},
-        {"model": "claude-haiku-5-5", "max_tokens": 1, "messages": [{"role": "user", "content": "k"}],
-         "system": [{"type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude."}]})
+    try:
+        headers, _ = request("https://api.anthropic.com/v1/messages", {
+            "Authorization": "Bearer " + login["access_token"], "anthropic-version": "2023-06-01", "anthropic-beta": "oauth-2025-04-20",
+            "content-type": "application/json", "User-Agent": "claude-cli/2.1.316 (external, cli)"},
+            {"model": "claude-fable-5-2", "max_tokens": 1, "messages": [{"role": "user", "content": "k"}],
+             "system": [{"type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude."}]})
+    except UsageError as error:
+        if error.headers is None:
+            raise
+        headers = error.headers
+        if not any(headers.get(f"anthropic-ratelimit-unified-{prefix}-utilization") is not None for prefix in ("5h", "7d", "7d_oi")):
+            raise
     windows = []
     for key, label, duration, prefix in (("five_hour", "Session", 18000000, "5h"), ("seven_day", "Weekly", 604800000, "7d")):
         used = headers.get(f"anthropic-ratelimit-unified-{prefix}-utilization")
         if used is not None:
             reset = headers.get(f"anthropic-ratelimit-unified-{prefix}-reset")
             windows.append({"id": key, "label": label, "usedPercent": clamp(float(used) * 100), "durationMs": duration, "resetAt": ms(int(reset)) if reset else None})
+    used = headers.get("anthropic-ratelimit-unified-7d_oi-utilization")
+    if used is not None:
+        reset = headers.get("anthropic-ratelimit-unified-7d_oi-reset")
+        window = fable_window(account, float(used) * 100, int(reset) if reset else None)
+        if window:
+            windows.append(window)
     return {"kind": "quota", "plan": account.get("plan"), "windows": windows}
 
 

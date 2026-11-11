@@ -1,6 +1,6 @@
 [
-  {"id": "claude-alt", "provider": "claude", "label": "Claude (Alt)", "file": "claude-alt.json", "plan": "pro", "keepalive": "hourly"},
-  {"id": "claude-main", "provider": "claude", "label": "Claude (Main)", "file": "claude-main.json", "plan": "pro", "keepalive": "hourly"},
+  {"id": "claude-alt", "provider": "claude", "label": "Claude (Alt)", "file": "claude-alt.json", "plan": "pro", "keepalive": "hourly", "fable_included_until": "2026-11-17T07:59:00Z"},
+  {"id": "claude-main", "provider": "claude", "label": "Claude (Main)", "file": "claude-main.json", "plan": "pro", "keepalive": "hourly", "fable_included_until": "2026-11-17T07:59:00Z"},
   {"id": "claude-fallback", "provider": "claude", "label": "Claude (Fallback)", "file": "claude-fallback.json", "plan": "max", "keepalive": "hourly", "setup_token": true, "manual": true},
   {"id": "codex-alt", "provider": "codex", "label": "Codex (Alt)", "file": "codex-00000000-alt@example.com-plus.json", "keepalive": "halfhourly"},
   {"id": "codex-main", "provider": "codex", "label": "Codex (Main)", "file": "codex-00000000-main@example.com-plus.json", "keepalive": "halfhourly"}
