@@ -156,7 +156,7 @@ def claude_usage(account, login):
         if isinstance(model, str) and model.casefold() == "fable" and limit.get("percent") is not None:
             window = fable_window(account, limit["percent"], limit.get("resets_at"))
             if window:
-                windows.append(window)
+                windows.insert(min(2, len(windows)), window)
             break
     reading = {"kind": "quota", "plan": account.get("plan"), "windows": windows}
     grants = claude_reset_grants(raw)

@@ -52,6 +52,8 @@ class ClaudeTests(unittest.TestCase):
         self.assertEqual(fable["expiresAt"], server.ms(self.account["fable_included_until"]))
         self.assertNotIn("expiresAt", self.usage(raw, {"plan": "max"})["windows"][-1])
         self.assertNotIn("resetGrants", reading)
+        with_opus = self.usage({**raw, "seven_day_opus": {"utilization": 10}})
+        self.assertEqual([w["label"] for w in with_opus["windows"][:3]], ["Session", "Weekly", "Fable"])
 
     def test_missing_or_expired_fable_preserves_the_shared_windows(self):
         raw = {"five_hour": {"utilization": 20}, "seven_day": {"utilization": 35},
