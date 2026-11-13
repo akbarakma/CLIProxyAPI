@@ -688,7 +688,7 @@ func setCustomToolCallOutputContentDoc(toolMessageDoc *ojson.Doc, output ojson.R
 	_ = toolMessageDoc.Set("content", responsesToolOutputText(output))
 }
 
-// Chat tool messages take text only. Some upstreams (z0ne) count an image left in a
+// Chat tool messages take text only. Some upstreams count an image left in a
 // tool message as base64 text: one 0.8 MB screenshot became 529,675 prompt tokens
 // instead of 3,013. Images move to a user message after the run of tool results.
 func moveToolOutputImagesToUserMessages(messages [][]byte) [][]byte {
