@@ -128,7 +128,7 @@ def verify(base, config_path, key, external=False, live=False, save=False):
         assert all(account["available"] for account in status["accounts"])
         print("PASS: custom panel checksum, private keepalive authentication, and live timer data", flush=True)
         usage = json.loads(request("https://" + tailnet_host + ":8443", "/v1/usage"))
-        assert {account["id"] for account in ACCOUNTS} <= {account["id"] for account in usage["accounts"]}
+        assert len(usage["accounts"]) == len(ACCOUNTS)
         print("PASS: public API, public management blocks, private panel, T3 hub, and usage service", flush=True)
 
 

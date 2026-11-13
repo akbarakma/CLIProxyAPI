@@ -15,34 +15,9 @@ PORT = int(os.environ.get("USAGE_PORT", "8318"))
 FRESH_FOR = 60
 FORCE_FLOOR = 10
 CODEX_UA = "codex_cli_rs/0.166.0"
-PROXY_CONFIG = os.environ.get("USAGE_PROXY_CONFIG", "/config/config.yaml")
-Z0NE_BASE_URL = "https://api.z0ne.ai/v1"
 
 with open(os.environ.get("USAGE_ACCOUNTS", "/config/accounts.json")) as accounts_file:
     ACCOUNTS = [{**account, "name": account["label"]} for account in json.load(accounts_file)]
-
-
-# PyYAML is not in the image, and the key must stay in config.yaml only, so read the one line it sits on.
-def z0ne_key():
-    try:
-        with open(PROXY_CONFIG) as f:
-            lines = f.read().splitlines()
-    except FileNotFoundError:
-        return None
-    for index, line in enumerate(lines):
-        if line.strip().removeprefix("- ") == f'base-url: "{Z0NE_BASE_URL}"':
-            item_indent = len(line) - len(line.lstrip())
-            for following in lines[index + 1:]:
-                stripped = following.strip()
-                if stripped.startswith("- ") and len(following) - len(following.lstrip()) <= item_indent:
-                    break
-                if stripped.removeprefix("- ").startswith("api-key:"):
-                    return stripped.removeprefix("- ").removeprefix("api-key:").strip().strip('"\'') or None
-    return None
-
-
-if z0ne_key():
-    ACCOUNTS.append({"id": "z0ne", "provider": "z0ne", "name": "z0ne"})
 BY_ID = {account["id"]: account for account in ACCOUNTS}
 CLAUDE_WINDOWS = [
     ("five_hour", "Session", 18000000), ("seven_day", "Weekly", 604800000),
@@ -220,24 +195,7 @@ def codex_usage(account, login):
     return reading
 
 
-# z0ne has no public balance API; its dashboard reads the same numbers from this endpoint with the API key.
-def z0ne_usage():
-    key = z0ne_key()
-    if not key:
-        raise UsageError("The z0ne key is missing from config.yaml on the proxy host.", 300)
-    _, raw = request("https://console.z0ne.ai/api/panel/usage", {
-        "Authorization": "Bearer " + key, "Content-Type": "application/json", "Accept": "application/json", "User-Agent": "cli-proxy-usage"},
-        {"page": 1, "limit": 1})
-    credit = raw["credit"]
-    total = credit.get("maxIdr")
-    return {"kind": "balance", "currency": "IDR", "remaining": credit["netRemainingIdr"], "used": credit.get("usedIdr"),
-            "limit": total if total and total > 0 else None, "resetAt": None, "plan": None, "scope": "key", "detail": "Prepaid balance",
-            "spentLast24h": ((raw.get("summary") or {}).get("windows") or {}).get("24h", {}).get("spentIdr")}
-
-
 def fetch(account, probe="fable"):
-    if account["provider"] == "z0ne":
-        return z0ne_usage()
     login = load_login(account)
     if account["provider"] == "codex":
         reading = codex_usage(account, login)

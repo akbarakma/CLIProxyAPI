@@ -23,7 +23,6 @@ services:
       USAGE_ALLOWED_LOGIN: ${USAGE_ALLOWED_LOGIN:?set USAGE_ALLOWED_LOGIN in .env}
       USAGE_AUTH_DIR: /auths
       USAGE_ACCOUNTS: /config/accounts.json
-      USAGE_PROXY_CONFIG: /config/config.yaml
     ports:
       - "127.0.0.1:8318:8318"
     volumes:
@@ -32,12 +31,6 @@ services:
       - type: bind
         source: ./.local/accounts.json
         target: /config/accounts.json
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ./config.yaml
-        target: /config/config.yaml
         read_only: true
         bind:
           create_host_path: false
