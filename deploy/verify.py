@@ -78,7 +78,7 @@ def verify(base, config_path, key, external=False, live=False, save=False):
     request(base, "/healthz")
     models = json.loads(request(base, "/v1/models", client))["data"]
     ids = {model["id"] for model in models}
-    assert {"gpt-6.1-sol", "claude-opus-5-5", "juxta/deepseek-v4.1-flash"} <= ids
+    assert {"gpt-6-luna", "claude-opus-5-5", "juxta/deepseek-v4.1-flash"} <= ids
     print("PASS: health, client authentication, model discovery, and routing settings", flush=True)
     panel = request(base, "/management.html")
     assert hashlib.sha256(panel).hexdigest() == PANEL_SHA256
