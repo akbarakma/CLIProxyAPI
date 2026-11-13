@@ -7,6 +7,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs
 
 AUTH_DIR = os.environ.get("USAGE_AUTH_DIR", "/auths")
 ALLOWED_LOGIN = os.environ["USAGE_ALLOWED_LOGIN"]
@@ -165,13 +166,14 @@ def claude_usage(account, login):
     return reading
 
 
-# A Fable probe returns all three quota headers and can open a session, so refresh stays manual.
-def claude_probe(account, login):
+# A probe can open a session, so refresh stays manual. Only the Fable probe returns the Fable (7d_oi) header.
+PROBES = {"fable": "claude-fable-5-2", "haiku": "claude-haiku-5-5"}
+def claude_probe(account, login, probe="fable"):
     try:
         headers, _ = request("https://api.anthropic.com/v1/messages", {
             "Authorization": "Bearer " + login["access_token"], "anthropic-version": "2023-06-01", "anthropic-beta": "oauth-2025-04-20",
             "content-type": "application/json", "User-Agent": "claude-cli/2.1.316 (external, cli)"},
-            {"model": "claude-fable-5-2", "max_tokens": 1, "messages": [{"role": "user", "content": "k"}],
+            {"model": PROBES[probe], "max_tokens": 1, "messages": [{"role": "user", "content": "k"}],
              "system": [{"type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude."}]})
     except UsageError as error:
         if error.headers is None:
@@ -233,14 +235,14 @@ def z0ne_usage():
             "spentLast24h": ((raw.get("summary") or {}).get("windows") or {}).get("24h", {}).get("spentIdr")}
 
 
-def fetch(account):
+def fetch(account, probe="fable"):
     if account["provider"] == "z0ne":
         return z0ne_usage()
     login = load_login(account)
     if account["provider"] == "codex":
         reading = codex_usage(account, login)
     elif account.get("manual"):
-        reading = claude_probe(account, login)
+        reading = claude_probe(account, login, probe)
     else:
         reading = claude_usage(account, login)
     if not reading["windows"]:
@@ -252,23 +254,25 @@ class Store:
     def __init__(self):
         self.states = {a["id"]: {"reading": None, "fetchedAt": None, "checkedAt": None, "refreshAfter": 0, "error": None} for a in ACCOUNTS}
         self.locks = {a["id"]: threading.Lock() for a in ACCOUNTS}
+        self.probes = {}
 
     def view(self, account_id):
         account = BY_ID[account_id]
         return {"id": account_id, "provider": account["provider"], "name": account["name"], "manualRefresh": bool(account.get("manual")), **self.states[account_id]}
 
-    def get(self, account_id, force=False):
+    def get(self, account_id, force=False, probe="fable"):
         account = BY_ID[account_id]
         with self.locks[account_id]:
             state = self.states[account_id]
             now = time.time()
             if force:
-                if state["checkedAt"] and now - state["checkedAt"] / 1000 < FORCE_FLOOR:
+                if state["checkedAt"] and now - state["checkedAt"] / 1000 < FORCE_FLOOR and self.probes.get(account_id, "fable") == probe:
                     return self.view(account_id)
             elif account.get("manual") or now * 1000 < state["refreshAfter"]:
                 return self.view(account_id)
+            self.probes[account_id] = probe
             try:
-                reading = fetch(account)
+                reading = fetch(account, probe)
                 stamp = int(time.time() * 1000)
                 state.update(reading=reading, fetchedAt=stamp, checkedAt=stamp, refreshAfter=int((time.time() + FRESH_FOR) * 1000), error=None)
             except UsageError as error:
@@ -296,11 +300,15 @@ class Handler(BaseHTTPRequestHandler):
     def route(self, force):
         if self.headers.get("Tailscale-User-Login") != ALLOWED_LOGIN:
             return self.send(403, {"error": "forbidden"})
-        path = self.path.split("?", 1)[0].rstrip("/")
+        path, _, query = self.path.partition("?")
+        path = path.rstrip("/")
+        probe = parse_qs(query).get("probe", ["fable"])[-1]
+        if probe not in PROBES:
+            return self.send(400, {"error": "unknown probe"})
         if path == "/v1/usage" and not force:
             return self.send(200, {"accounts": list(pool.map(store.get, BY_ID)), "generatedAt": int(time.time() * 1000)})
         if path.startswith("/v1/usage/") and path[len("/v1/usage/"):] in BY_ID:
-            return self.send(200, store.get(path[len("/v1/usage/"):], force))
+            return self.send(200, store.get(path[len("/v1/usage/"):], force, probe))
         self.send(404, {"error": "not found"})
 
     def do_GET(self):

@@ -13,6 +13,10 @@ Setup tokens use one Fable request with a one-token output limit.
 Its response headers report Session, Weekly, and Fable usage.
 Quota headers remain usable when the request returns HTTP 429.
 This request spends quota and can open a session, so setup accounts remain manual.
+`POST /v1/usage/<id>?probe=haiku` sends a Haiku probe instead.
+Haiku responses omit the Fable header, so that reading has Session and Weekly only.
+Orebyte uses it because it refreshes on every open; Vault keeps the Fable probe.
+A refresh inside the ten-second floor reuses the cache only when it asks for the same probe.
 
 An account can set `fable_included_until` to an ISO timestamp in the account configuration.
 Its Fable window carries that timestamp as optional `expiresAt`, in epoch milliseconds.

@@ -91,6 +91,30 @@ class ClaudeTests(unittest.TestCase):
         self.assertEqual(reading["windows"][-1]["resetAt"], 1794520800000)
         self.assertNotIn("resetGrants", reading)
 
+    def test_haiku_probe_reads_session_and_weekly_without_a_fable_row(self):
+        headers = {"anthropic-ratelimit-unified-5h-utilization": "0.06", "anthropic-ratelimit-unified-7d-utilization": "0.01"}
+        with patch.object(server, "request", return_value=(headers, {})) as request:
+            reading = server.claude_probe({"plan": "max"}, self.login, "haiku")
+        self.assertEqual(request.call_args.args[2]["model"], "claude-haiku-5-5")
+        self.assertEqual([w["label"] for w in reading["windows"]], ["Session", "Weekly"])
+
+    def test_a_fable_refresh_inside_the_floor_is_not_served_a_haiku_reading(self):
+        store = server.Store()
+        server.BY_ID["andrew"] = {"id": "andrew", "provider": "claude", "name": "Andrew", "manual": True}
+        store.states["andrew"] = {"reading": None, "fetchedAt": None, "checkedAt": None, "refreshAfter": 0, "error": None}
+        store.locks["andrew"] = server.threading.Lock()
+        reading = {"kind": "quota", "windows": [{"id": "five_hour"}]}
+        try:
+            with patch.object(server, "fetch", return_value=reading) as fetch:
+                store.get("andrew", True, "haiku")
+                store.get("andrew", True, "haiku")
+                store.get("andrew", True, "fable")
+                store.get("andrew", True, "fable")
+                store.get("andrew")
+            self.assertEqual([c.args[1] for c in fetch.call_args_list], ["haiku", "fable"])
+        finally:
+            del server.BY_ID["andrew"]
+
     def test_fable_429_still_returns_usage_but_an_unrelated_429_remains_an_error(self):
         headers = Message()
         for name, value in {"anthropic-ratelimit-unified-5h-utilization": "0.1",
