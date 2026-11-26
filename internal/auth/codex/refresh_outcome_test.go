@@ -159,3 +159,30 @@ func TestRefreshHTTPFailureDoesNotProveReplaySafe(t *testing.T) {
 		})
 	}
 }
+
+func TestUnreachableTokenEndpointDefersRefreshWithoutClaim(t *testing.T) {
+	resetCodexRefreshGroupForTest()
+	t.Cleanup(resetCodexRefreshGroupForTest)
+	online := false
+	posts := 0
+	auth := NewCodexAuth(&config.Config{AuthDir: t.TempDir()})
+	auth.httpClient.Transport = rawRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if !online {
+			return nil, errors.New("dial tcp: lookup auth.openai.com: server misbehaving")
+		}
+		if req.Method == http.MethodHead {
+			return &http.Response{StatusCode: http.StatusMethodNotAllowed, Header: make(http.Header), Body: http.NoBody, Request: req}, nil
+		}
+		posts++
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"access_token":"after-boot","refresh_token":"rotated","expires_in":3600}`)), Request: req}, nil
+	})
+	_, errRefresh := auth.RefreshTokens(context.Background(), "boot-grant")
+	if errRefresh == nil || IsRefreshOutcomeUnknown(errRefresh) || posts != 0 {
+		t.Fatalf("offline refresh must defer without a claim: error = %v, posts = %d", errRefresh, posts)
+	}
+	online = true
+	tokens, errRefresh := auth.RefreshTokens(context.Background(), "boot-grant")
+	if errRefresh != nil || tokens == nil || tokens.AccessToken != "after-boot" || posts != 1 {
+		t.Fatalf("refresh must succeed once the endpoint answers: tokens = %v, error = %v, posts = %d", tokens, errRefresh, posts)
+	}
+}

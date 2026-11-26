@@ -71,9 +71,15 @@ func (o *CodexAuth) journal(ctx context.Context) RefreshJournal {
 
 // journalRefresh returns a saved successful receipt to late callers. An incomplete
 // claim is deliberately not reclaimed, even after a crash or a storage timeout.
-func journalRefresh[T any](ctx context.Context, journal RefreshJournal, clientID, grant string, run func() (T, error), decode func(ojson.Result) (T, error)) (T, error) {
+func journalRefresh[T any](ctx context.Context, journal RefreshJournal, clientID, grant string, probe func() error, run func() (T, error), decode func(ojson.Result) (T, error)) (T, error) {
 	var zero T
 	key := refreshGrantKey(clientID, grant)
+	// A claim is permanent, so prove the endpoint answers before taking one; a failed probe sent no grant and can retry.
+	if receipt, errRead := journal.RefreshRead(ctx, key); errRead == nil && len(receipt) == 0 {
+		if errProbe := probe(); errProbe != nil {
+			return zero, errProbe
+		}
+	}
 	claimed, errClaim := journal.RefreshClaim(ctx, key)
 	if errClaim != nil {
 		return zero, &RefreshOutcomeUnknownError{Stage: "claim", Cause: errClaim}
@@ -234,6 +240,20 @@ func (j *memoryRefreshJournal) RefreshComplete(_ context.Context, key string, re
 	defer j.mu.Unlock()
 	j.receipts[key] = append([]byte(nil), receipt...)
 	return nil
+}
+
+func (o *CodexAuth) probeRefreshEndpoint(ctx context.Context, endpoint string) error {
+	probeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	req, errReq := http.NewRequestWithContext(probeCtx, http.MethodHead, endpoint, nil)
+	if errReq != nil {
+		return fmt.Errorf("token refresh deferred: %w", errReq)
+	}
+	resp, errDo := o.doRefreshRequest(req)
+	if errDo != nil {
+		return fmt.Errorf("token refresh deferred, endpoint unreachable: %w", errDo)
+	}
+	return resp.Body.Close()
 }
 
 // doRefreshRequest forbids 307/308 redirects from silently replaying a POST body.

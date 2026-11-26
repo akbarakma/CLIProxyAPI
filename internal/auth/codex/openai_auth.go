@@ -212,7 +212,9 @@ func (o *CodexAuth) RefreshTokens(ctx context.Context, refreshToken string) (*Co
 	result, err, _ := codexRefreshGroup.Do(refreshToken, func() (interface{}, error) {
 		refreshCtx, cancelRefresh := context.WithTimeout(context.WithoutCancel(ctx), codexRefreshTimeout)
 		defer cancelRefresh()
-		return journalRefresh(refreshCtx, o.journal(ctx), ClientID, refreshToken, func() (*CodexTokenData, error) {
+		return journalRefresh(refreshCtx, o.journal(ctx), ClientID, refreshToken, func() error {
+			return o.probeRefreshEndpoint(refreshCtx, TokenURL)
+		}, func() (*CodexTokenData, error) {
 			return o.refreshTokensSingleFlight(refreshCtx, refreshToken)
 		}, decodeRefreshReceipt)
 	})

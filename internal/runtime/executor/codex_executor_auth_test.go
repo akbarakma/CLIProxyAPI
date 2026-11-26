@@ -47,6 +47,10 @@ func startCodexMockOAuthServers(t *testing.T, idToken string) (proxyURL string, 
 	t.Helper()
 
 	mockAuthServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
 		respBody := map[string]any{
 			"access_token":  "new-mock-access-token",
 			"refresh_token": "new-mock-refresh-token",
@@ -319,6 +323,10 @@ func startDualCodexAndSIWCMockOAuthServer(t *testing.T, idToken string, failSIWC
 	t.Helper()
 	var oCount, sCount int
 	mockAuthServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
 		_ = r.ParseForm()
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {

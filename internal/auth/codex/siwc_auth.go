@@ -335,7 +335,9 @@ func (o *CodexAuth) RefreshSIWCTokens(ctx context.Context, refreshToken, clientI
 			"refresh_token": {refreshToken},
 			"resource":      {SIWCResource},
 		}
-		return journalRefresh(refreshCtx, o.journal(ctx), clientID, refreshToken, func() (*CodexSIWCTokenData, error) {
+		return journalRefresh(refreshCtx, o.journal(ctx), clientID, refreshToken, func() error {
+			return o.probeRefreshEndpoint(refreshCtx, siwcTokenEndpointURL)
+		}, func() (*CodexSIWCTokenData, error) {
 			return o.requestSIWCToken(refreshCtx, form, clientID, deviceID, false)
 		}, decodeSIWCRefreshReceipt)
 	})

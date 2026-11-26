@@ -48,6 +48,10 @@ func TestCodexSIWCRecoveryPreservesRequestPartition(t *testing.T) {
 			const model = "gpt-5.4"
 			var outerCalls, siwcCalls, inferenceCalls atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				if req.Method == http.MethodHead {
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
 				w.Header().Set("Content-Type", "application/json")
 				switch req.URL.Path {
 				case "/oauth/token":

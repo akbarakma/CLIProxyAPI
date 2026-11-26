@@ -36,6 +36,9 @@ func TestGitRefreshDoesNotDeadlockWithConcurrentSave(t *testing.T) {
 	allowResponse := make(chan struct{})
 	originalTransport := http.DefaultTransport
 	http.DefaultTransport = journalRoundTripper(func(req *http.Request) (*http.Response, error) {
+		if req.Method == http.MethodHead {
+			return &http.Response{StatusCode: http.StatusMethodNotAllowed, Header: make(http.Header), Body: http.NoBody, Request: req}, nil
+		}
 		close(transportEntered)
 		<-allowResponse
 		return &http.Response{StatusCode: 200, Header: make(http.Header), Request: req, Body: io.NopCloser(strings.NewReader(`{"access_token":"new-access","refresh_token":"new-grant","expires_in":3600}`))}, nil

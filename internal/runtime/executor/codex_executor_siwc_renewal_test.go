@@ -22,6 +22,9 @@ func TestCodexExecutorSIWCRetainsRotatedTokensWhenScopeIsOmitted(t *testing.T) {
 	t.Cleanup(func() { http.DefaultTransport = previousTransport })
 	cycle := 0
 	http.DefaultTransport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		if req.Method == http.MethodHead {
+			return &http.Response{StatusCode: http.StatusMethodNotAllowed, Header: make(http.Header), Body: http.NoBody, Request: req}, nil
+		}
 		if errParse := req.ParseForm(); errParse != nil {
 			t.Fatal(errParse)
 		}
@@ -88,6 +91,9 @@ func TestCodexExecutorSIWCExplicitRefreshHonorsServerWindow(t *testing.T) {
 	t.Cleanup(func() { http.DefaultTransport = previousTransport })
 	calls := 0
 	http.DefaultTransport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		if req.Method == http.MethodHead {
+			return &http.Response{StatusCode: http.StatusMethodNotAllowed, Header: make(http.Header), Body: http.NoBody, Request: req}, nil
+		}
 		calls++
 		return &http.Response{StatusCode: http.StatusBadRequest, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"error":"invalid_grant"}`))}, nil
 	})

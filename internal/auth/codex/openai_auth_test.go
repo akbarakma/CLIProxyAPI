@@ -16,9 +16,17 @@ import (
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
+// Answers the pre-claim HEAD probe so call counts cover only grant-bearing requests.
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Method == http.MethodHead {
+		return &http.Response{StatusCode: http.StatusMethodNotAllowed, Header: make(http.Header), Body: http.NoBody, Request: req}, nil
+	}
 	return f(req)
 }
+
+type rawRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f rawRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
 func TestNewCodexAuthDoesNotSetRequestTimeout(t *testing.T) {
 	if got := NewCodexAuth(nil).httpClient.Timeout; got != 0 {
